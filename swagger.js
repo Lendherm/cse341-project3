@@ -8,7 +8,7 @@ const options = {
       version: '1.0.0',
       description: 'CRUD API for Books and Authors'
     },
-    servers: [{ url: 'https://your-render-app.onrender.com' }] // Cambia por tu URL
+    servers: [{ url: 'http://localhost:8080' }]
   },
   apis: ['./routes/*.js']
 };

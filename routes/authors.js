@@ -11,20 +11,26 @@ const authorsController = require('../controllers/authors');
  *       required:
  *         - name
  *       properties:
- *         id:
- *           type: string
  *         name:
  *           type: string
+ *           example: "Gabriel García Márquez"
  *         bio:
  *           type: string
+           example: "Colombian novelist, Nobel Prize winner."
  *         birthDate:
  *           type: string
+ *           format: date
+ *           example: "1927-03-06"
  *         nationality:
  *           type: string
- *         createdAt:
- *           type: string
- *         updatedAt:
- *           type: string
+ *           example: "Colombian"
+ */
+
+/**
+ * @swagger
+ * tags:
+ *   name: Authors
+ *   description: Author management
  */
 
 /**
@@ -51,6 +57,7 @@ router.get('/', authorsController.getAllAuthors);
  *         schema:
  *           type: string
  *         required: true
+ *         description: MongoDB ObjectId
  *     responses:
  *       200:
  *         description: Author found
@@ -74,6 +81,8 @@ router.get('/:id', authorsController.getAuthorById);
  *     responses:
  *       201:
  *         description: Author created
+ *       400:
+ *         description: Validation error
  */
 router.post('/', authorsController.createAuthor);
 
@@ -89,6 +98,7 @@ router.post('/', authorsController.createAuthor);
  *         schema:
  *           type: string
  *         required: true
+ *         description: MongoDB ObjectId
  *     requestBody:
  *       required: true
  *       content:
@@ -98,6 +108,10 @@ router.post('/', authorsController.createAuthor);
  *     responses:
  *       200:
  *         description: Author updated successfully
+ *       400:
+ *         description: Invalid ID or data
+ *       404:
+ *         description: Author not found
  */
 router.put('/:id', authorsController.updateAuthor);
 
@@ -107,15 +121,18 @@ router.put('/:id', authorsController.updateAuthor);
  *   delete:
  *     summary: Delete an author
  *     tags: [Authors]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Author deleted
+     parameters:
+       - in: path
+         name: id
+         schema:
+           type: string
+         required: true
+         description: MongoDB ObjectId
+     responses:
+       200:
+         description: Author deleted
+       404:
+         description: Author not found
  */
 router.delete('/:id', authorsController.deleteAuthor);
 

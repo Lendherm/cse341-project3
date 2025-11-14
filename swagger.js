@@ -8,10 +8,16 @@ const swaggerOptions = {
         "API for CRUD operations with Books and Authors using Node.js, MongoDB, Mongoose and Express.",
     },
     servers: [
-      {
-        url: "http://localhost:8080",
-      },
-    ],
+  {
+    url: "https://cse341-project3-11r5.onrender.com",
+    description: "Production server (Render)"
+  },
+  {
+    url: "http://localhost:8080",
+    description: "Local development server"
+  }
+],
+
     components: {
       schemas: {
         Author: {

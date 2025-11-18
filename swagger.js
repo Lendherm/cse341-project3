@@ -8,15 +8,15 @@ const swaggerOptions = {
         "API for CRUD operations with Books and Authors using Node.js, MongoDB, Mongoose and Express.",
     },
     servers: [
-  {
-    url: "https://cse341-project3-11r5.onrender.com",
-    description: "Production server (Render)"
-  },
-  {
-    url: "http://localhost:8080",
-    description: "Local development server"
-  }
-],
+      {
+        url: "https://cse341-project3-11r5.onrender.com",
+        description: "Production server (Render)"
+      },
+      {
+        url: "http://localhost:8080",
+        description: "Local development server"
+      }
+    ],
 
     components: {
       schemas: {
@@ -46,27 +46,52 @@ const swaggerOptions = {
 
         Book: {
           type: "object",
-          required: ["title", "author"],
+          required: ["title", "authorId", "genre", "price"],
           properties: {
             title: {
               type: "string",
-              example: "Cien años de soledad",
+              example: "The Hobbit"
             },
-            description: {
+            authorId: {
               type: "string",
-              example: "A magical realism novel set in Macondo.",
-            },
-            publishYear: {
-              type: "integer",
-              example: 1967,
+              example: "60fc5ba8c25e243cf0d8e8b7"
             },
             genre: {
               type: "string",
-              example: "Magical Realism",
+              example: "Fantasy"
             },
-            author: {
+            publishedYear: {
+              type: "integer",
+              example: 1937
+            },
+            pages: {
+              type: "integer",
+              example: 310
+            },
+            price: {
+              type: "number",
+              example: 19.99
+            },
+            inStock: {
+              type: "boolean",
+              example: true
+            },
+            tags: {
+              type: "array",
+              items: { type: "string" },
+              example: ["classic", "adventure", "fantasy"]
+            },
+            summary: {
               type: "string",
-              example: "60fc5ba8c25e243cf0d8e8b7", // Example ObjectId
+              example: "A fantasy novel about Bilbo Baggins' adventure with dwarves."
+            },
+            createdAt: {
+              type: "string",
+              example: "2025-01-18T10:23:54.123Z"
+            },
+            updatedAt: {
+              type: "string",
+              example: "2025-01-18T10:23:54.123Z"
             }
           }
         }

@@ -131,13 +131,13 @@ app.get('/', (req, res) => {
         username: req.user.username,
         displayName: req.user.displayName
       },
-      logoutUrl: '/auth/logout',
+      logoutUrl: '/logout',  // ← Actualizado a /logout
       apiDocs: '/api-docs'
     });
   } else {
     res.json({
       message: 'Welcome to Books & Authors API!',
-      loginUrl: '/auth/github',
+      loginUrl: '/login',    // ← Actualizado a /login
       apiDocs: '/api-docs'
     });
   }
@@ -146,6 +146,11 @@ app.get('/', (req, res) => {
 // Redirect /login to /auth/github
 app.get('/login', (req, res) => {
   res.redirect('/auth/github');
+});
+
+// Redirect /logout to /auth/logout
+app.get('/logout', (req, res) => {
+  res.redirect('/auth/logout');
 });
 
 // Auth routes
@@ -209,6 +214,7 @@ app.use('*', (req, res) => {
     availableRoutes: {
       home: '/',
       login: '/login',
+      logout: '/logout',  // ← Agregado
       apiDocs: '/api-docs',
       books: '/books',
       authors: '/authors',
@@ -240,6 +246,7 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Home: http://localhost:${PORT}/`);
   console.log(`Login: http://localhost:${PORT}/login`);
+  console.log(`Logout: http://localhost:${PORT}/logout`);  // ← Agregado
   console.log(`API Documentation: http://localhost:${PORT}/api-docs`);
 });
 

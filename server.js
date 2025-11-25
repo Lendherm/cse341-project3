@@ -13,37 +13,45 @@ dotenv.config();
 
 const app = express();
 
+// Configuración dinámica para múltiples entornos
+const isProduction = process.env.NODE_ENV === 'production';
+const LOCAL_URL = 'http://localhost:8080';
+const PRODUCTION_URL = 'https://cse341-project3-11r5.onrender.com';
+const CURRENT_URL = isProduction ? PRODUCTION_URL : LOCAL_URL;
+
+console.log('=== ENVIRONMENT CONFIG ===');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('isProduction:', isProduction);
+console.log('CURRENT_URL:', CURRENT_URL);
+console.log('==========================');
+
 // Middleware
 app.use(express.json());
-app.use(cors());
 
-// Session configuration (sin SESSION_SECRET en .env)
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'cse341-books-api-development-key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
+// CORS configurado para ambos entornos
+app.use(cors({
+  origin: [LOCAL_URL, PRODUCTION_URL],
+  credentials: true
 }));
 
+// Session configuration para ambos entornos
+zv
 // Passport configuration
 app.use(passport.initialize());
 app.use(passport.session());
 
 const User = require('./models/user');
 
-// GitHub OAuth Strategy - VERSIÓN CORREGIDA
+// GitHub OAuth Strategy - CONFIGURACIÓN DINÁMICA
 passport.use(new GitHubStrategy({
   clientID: process.env.GITHUB_CLIENT_ID,
   clientSecret: process.env.GITHUB_CLIENT_SECRET,
-  callbackURL: process.env.GITHUB_CALLBACK_URL || "http://localhost:8080/auth/github/callback",
-  scope: ['user:email']  // Asegurar que pedimos el scope de email
+  callbackURL: process.env.GITHUB_CALLBACK_URL || `${CURRENT_URL}/auth/github/callback`,
+  scope: ['user:email']
 },
 async function(accessToken, refreshToken, profile, done) {
   try {
-    console.log('GitHub Profile received:'); // ← Para debug
+    console.log('GitHub Profile received:');
     console.log('ID:', profile.id);
     console.log('Username:', profile.username);
     console.log('Display Name:', profile.displayName);
@@ -57,10 +65,9 @@ async function(accessToken, refreshToken, profile, done) {
       return done(null, user);
     }
 
-    // Manejar email de forma segura - GitHub puede no devolver emails
+    // Manejar email de forma segura
     let userEmail = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
     
-    // Si no hay email, crear uno basado en el username
     if (!userEmail) {
       userEmail = `${profile.username}@users.noreply.github.com`;
       console.log('No email from GitHub, using:', userEmail);
@@ -72,7 +79,6 @@ async function(accessToken, refreshToken, profile, done) {
       
       if (user) {
         console.log('User found by email, linking GitHub account:', user.username);
-        // Link GitHub account to existing user
         user.githubId = profile.id;
         await user.save();
         return done(null, user);
@@ -97,7 +103,7 @@ async function(accessToken, refreshToken, profile, done) {
   }
 }));
 
-// Passport serialization
+// ... (el resto del código de serialización/deserialización se mantiene igual)
 passport.serializeUser((user, done) => {
   done(null, user.id);
 });
@@ -111,13 +117,9 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// Middleware de debug temporal (opcional)
+// Middleware para log de entorno
 app.use((req, res, next) => {
-  console.log('=== SESSION DEBUG ===');
-  console.log('Session ID:', req.sessionID);
-  console.log('Authenticated:', req.isAuthenticated());
-  console.log('User:', req.user ? req.user.username : 'No user');
-  console.log('=====================');
+  console.log(`[${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}] ${req.method} ${req.url}`);
   next();
 });
 
@@ -131,14 +133,17 @@ app.get('/', (req, res) => {
         username: req.user.username,
         displayName: req.user.displayName
       },
-      logoutUrl: '/logout',  // ← Actualizado a /logout
-      apiDocs: '/api-docs'
+      logoutUrl: '/logout',
+      apiDocs: '/api-docs',
+      environment: isProduction ? 'production' : 'development'
     });
   } else {
     res.json({
       message: 'Welcome to Books & Authors API!',
-      loginUrl: '/login',    // ← Actualizado a /login
-      apiDocs: '/api-docs'
+      loginUrl: '/login',
+      apiDocs: '/api-docs',
+      environment: isProduction ? 'production' : 'development',
+      currentUrl: CURRENT_URL
     });
   }
 });
@@ -188,7 +193,8 @@ app.get('/auth/current', (req, res) => {
         username: req.user.username,
         email: req.user.email,
         displayName: req.user.displayName
-      }
+      },
+      environment: isProduction ? 'production' : 'development'
     });
   } else {
     res.status(401).json({ message: 'Not authenticated' });
@@ -214,7 +220,7 @@ app.use('*', (req, res) => {
     availableRoutes: {
       home: '/',
       login: '/login',
-      logout: '/logout',  // ← Agregado
+      logout: '/logout',
       apiDocs: '/api-docs',
       books: '/books',
       authors: '/authors',
@@ -223,7 +229,8 @@ app.use('*', (req, res) => {
         logout: '/auth/logout',
         current: '/auth/current'
       }
-    }
+    },
+    environment: isProduction ? 'production' : 'development'
   });
 });
 
@@ -232,7 +239,8 @@ app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
   res.status(500).json({ 
     message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    error: isProduction ? undefined : error.message,
+    environment: isProduction ? 'production' : 'development'
   });
 });
 
@@ -243,11 +251,18 @@ mongoose.connect(process.env.MONGODB_URI)
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
+  console.log('=== SERVER STARTED ===');
+  console.log(`Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
   console.log(`Server running on port ${PORT}`);
-  console.log(`Home: http://localhost:${PORT}/`);
-  console.log(`Login: http://localhost:${PORT}/login`);
-  console.log(`Logout: http://localhost:${PORT}/logout`);  // ← Agregado
-  console.log(`API Documentation: http://localhost:${PORT}/api-docs`);
+  console.log(`Local URL: ${LOCAL_URL}`);
+  console.log(`Production URL: ${PRODUCTION_URL}`);
+  console.log(`Current URL: ${CURRENT_URL}`);
+  console.log(`Home: ${CURRENT_URL}/`);
+  console.log(`Login: ${CURRENT_URL}/login`);
+  console.log(`Logout: ${CURRENT_URL}/logout`);
+  console.log(`API Documentation: ${CURRENT_URL}/api-docs`);
+  console.log(`GitHub Callback: ${CURRENT_URL}/auth/github/callback`);
+  console.log('======================');
 });
 
 module.exports = app;

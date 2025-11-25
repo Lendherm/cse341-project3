@@ -8,6 +8,7 @@ const GitHubStrategy = require('passport-github2').Strategy;
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerOptions = require('./swagger');
+const path = require('path');
 
 dotenv.config();
 
@@ -19,6 +20,12 @@ const LOCAL_URL = 'http://localhost:8080';
 const PRODUCTION_URL = 'https://cse341-project3-11r5.onrender.com';
 const CURRENT_URL = isProduction ? PRODUCTION_URL : LOCAL_URL;
 
+// Trust proxy para Render
+if (isProduction) {
+  app.set('trust proxy', 1);
+  console.log('✅ Trust proxy enabled for production');
+}
+
 console.log('=== ENVIRONMENT CONFIG ===');
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('isProduction:', isProduction);
@@ -29,20 +36,26 @@ console.log('==========================');
 app.use(express.json());
 
 // CORS configurado para ambos entornos
-app.use(cors({
-  origin: [LOCAL_URL, PRODUCTION_URL],
-  credentials: true
-}));
+const corsOptions = {
+  origin: [LOCAL_URL, PRODUCTION_URL, 'https://cse341-project3-11r5.onrender.com'],
+  credentials: true,
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  optionsSuccessStatus: 204
+};
+app.use(cors(corsOptions));
 
-// Session configuration para ambos entornos
+// Session configuration para producción
 app.use(session({
   secret: process.env.SESSION_SECRET || 'cse341-books-api-development-key',
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: isProduction, // true en producción, false en desarrollo
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: isProduction ? 'none' : 'lax' // Importante para OAuth en producción
+  },
+  proxy: isProduction // Permitir proxy en producción
 }));
 
 // Passport configuration
@@ -51,16 +64,17 @@ app.use(passport.session());
 
 const User = require('./models/user');
 
-// GitHub OAuth Strategy - CONFIGURACIÓN DINÁMICA
+// GitHub OAuth Strategy - CONFIGURACIÓN MEJORADA
 passport.use(new GitHubStrategy({
   clientID: process.env.GITHUB_CLIENT_ID,
   clientSecret: process.env.GITHUB_CLIENT_SECRET,
   callbackURL: process.env.GITHUB_CALLBACK_URL || `${CURRENT_URL}/auth/github/callback`,
-  scope: ['user:email']
+  scope: ['user:email'],
+  proxy: isProduction // Importante para Render
 },
 async function(accessToken, refreshToken, profile, done) {
   try {
-    console.log('GitHub Profile received:');
+    console.log('🔐 GitHub Profile received:');
     console.log('ID:', profile.id);
     console.log('Username:', profile.username);
     console.log('Display Name:', profile.displayName);
@@ -70,7 +84,7 @@ async function(accessToken, refreshToken, profile, done) {
     let user = await User.findOne({ githubId: profile.id });
     
     if (user) {
-      console.log('User found by GitHub ID:', user.username);
+      console.log('✅ User found by GitHub ID:', user.username);
       return done(null, user);
     }
 
@@ -79,7 +93,7 @@ async function(accessToken, refreshToken, profile, done) {
     
     if (!userEmail) {
       userEmail = `${profile.username}@users.noreply.github.com`;
-      console.log('No email from GitHub, using:', userEmail);
+      console.log('📧 No email from GitHub, using:', userEmail);
     }
 
     // Check if user exists with the same email
@@ -87,7 +101,7 @@ async function(accessToken, refreshToken, profile, done) {
       user = await User.findOne({ email: userEmail });
       
       if (user) {
-        console.log('User found by email, linking GitHub account:', user.username);
+        console.log('✅ User found by email, linking GitHub account:', user.username);
         user.githubId = profile.id;
         await user.save();
         return done(null, user);
@@ -104,15 +118,15 @@ async function(accessToken, refreshToken, profile, done) {
     });
 
     await newUser.save();
-    console.log('New user created:', newUser.username);
+    console.log('✅ New user created:', newUser.username);
     return done(null, newUser);
   } catch (error) {
-    console.error('Error in GitHub strategy:', error);
+    console.error('❌ Error in GitHub strategy:', error);
     return done(error, null);
   }
 }));
 
-// ... (el resto del código de serialización/deserialización se mantiene igual)
+// Passport serialization
 passport.serializeUser((user, done) => {
   done(null, user.id);
 });
@@ -126,10 +140,25 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// Middleware para log de entorno
+// Middleware para log de entorno y debugging
 app.use((req, res, next) => {
   console.log(`[${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}] ${req.method} ${req.url}`);
+  console.log('Session ID:', req.sessionID);
+  console.log('Authenticated:', req.isAuthenticated());
+  console.log('User:', req.user ? req.user.username : 'No user');
   next();
+});
+
+// Servir archivos estáticos (para favicon y otros recursos)
+app.use(express.static('public'));
+
+// Crear ruta para favicon temporal
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).end(); // No Content - elimina el error 404
+});
+
+app.get('/favicon-32x32.png', (req, res) => {
+  res.status(204).end(); // No Content - elimina el error 404
 });
 
 // Routes
@@ -144,7 +173,8 @@ app.get('/', (req, res) => {
       },
       logoutUrl: '/logout',
       apiDocs: '/api-docs',
-      environment: isProduction ? 'production' : 'development'
+      environment: isProduction ? 'production' : 'development',
+      currentUrl: CURRENT_URL
     });
   } else {
     res.json({
@@ -159,38 +189,55 @@ app.get('/', (req, res) => {
 
 // Redirect /login to /auth/github
 app.get('/login', (req, res) => {
+  console.log('🔑 Login redirect initiated');
   res.redirect('/auth/github');
 });
 
 // Redirect /logout to /auth/logout
 app.get('/logout', (req, res) => {
+  console.log('🚪 Logout redirect initiated');
   res.redirect('/auth/logout');
 });
 
 // Auth routes
 app.get('/auth/github',
+  (req, res, next) => {
+    console.log('🔐 Initiating GitHub OAuth flow');
+    console.log('Callback URL:', process.env.GITHUB_CALLBACK_URL || `${CURRENT_URL}/auth/github/callback`);
+    next();
+  },
   passport.authenticate('github', { scope: ['user:email'] })
 );
 
 app.get('/auth/github/callback',
+  (req, res, next) => {
+    console.log('🔄 GitHub callback received');
+    console.log('Query params:', req.query);
+    next();
+  },
   passport.authenticate('github', { 
-    failureRedirect: '/',
+    failureRedirect: '/?error=auth_failed',
     failureMessage: true 
   }),
   (req, res) => {
-    console.log('Login successful, user:', req.user.username);
+    console.log('✅ Login successful, user:', req.user.username);
     res.redirect('/api-docs');
   }
 );
 
 app.get('/auth/logout', (req, res) => {
-  console.log('Logging out user:', req.user ? req.user.username : 'No user');
+  console.log('🚪 Logging out user:', req.user ? req.user.username : 'No user');
   req.logout((err) => {
     if (err) {
-      console.error('Logout error:', err);
+      console.error('❌ Logout error:', err);
       return res.status(500).json({ message: 'Error logging out' });
     }
-    res.redirect('/');
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('❌ Session destruction error:', err);
+      }
+      res.redirect('/');
+    });
   });
 });
 
@@ -210,6 +257,17 @@ app.get('/auth/current', (req, res) => {
   }
 });
 
+// Debug route para ver sesión
+app.get('/auth/debug', (req, res) => {
+  res.json({
+    authenticated: req.isAuthenticated(),
+    user: req.user,
+    session: req.session,
+    sessionID: req.sessionID,
+    environment: isProduction ? 'production' : 'development'
+  });
+});
+
 // Import routes
 const bookRoutes = require('./routes/books');
 const authorRoutes = require('./routes/authors');
@@ -220,7 +278,11 @@ app.use('/authors', authorRoutes);
 
 // Swagger documentation
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, {
+  swaggerOptions: {
+    persistAuthorization: true,
+  }
+}));
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -236,7 +298,8 @@ app.use('*', (req, res) => {
       auth: {
         login: '/auth/github',
         logout: '/auth/logout',
-        current: '/auth/current'
+        current: '/auth/current',
+        debug: '/auth/debug'
       }
     },
     environment: isProduction ? 'production' : 'development'
@@ -245,7 +308,7 @@ app.use('*', (req, res) => {
 
 // Error handling middleware
 app.use((error, req, res, next) => {
-  console.error('Unhandled error:', error);
+  console.error('❌ Unhandled error:', error);
   res.status(500).json({ 
     message: 'Internal server error',
     error: isProduction ? undefined : error.message,
@@ -255,12 +318,12 @@ app.use((error, req, res, next) => {
 
 // MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log('=== SERVER STARTED ===');
+  console.log('=== 🚀 SERVER STARTED ===');
   console.log(`Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
   console.log(`Server running on port ${PORT}`);
   console.log(`Local URL: ${LOCAL_URL}`);
@@ -271,7 +334,7 @@ app.listen(PORT, () => {
   console.log(`Logout: ${CURRENT_URL}/logout`);
   console.log(`API Documentation: ${CURRENT_URL}/api-docs`);
   console.log(`GitHub Callback: ${CURRENT_URL}/auth/github/callback`);
-  console.log('======================');
+  console.log('==========================');
 });
 
 module.exports = app;

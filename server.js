@@ -35,7 +35,16 @@ app.use(cors({
 }));
 
 // Session configuration para ambos entornos
-zv
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'cse341-books-api-development-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: isProduction, // true en producción, false en desarrollo
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 // Passport configuration
 app.use(passport.initialize());
 app.use(passport.session());

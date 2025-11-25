@@ -1,5 +1,5 @@
-const Author = require('../models/author');
-const Book = require('../models/book');
+const Author = require('../models/authors');
+const Book = require('../models/books');
 
 // Validation function
 const validateAuthorData = (authorData) => {

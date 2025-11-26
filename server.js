@@ -44,16 +44,36 @@ if (isProduction) {
 // Middleware
 app.use(express.json());
 
-// CORS configurado para ambos entornos
+// CORS configurado CORRECTAMENTE para Render - FIX CRÍTICO
 const corsOptions = {
-  origin: [LOCAL_URL, PRODUCTION_URL],
-  credentials: true,
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  optionsSuccessStatus: 204
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (como mobile apps o curl)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'https://cse341-project3-11r5.onrender.com',
+      'http://localhost:8080',
+      'http://localhost:3000'
+    ];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('❌ CORS bloqueado para origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // ¡ESENCIAL para cookies!
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Origin', 'Accept'],
+  exposedHeaders: ['Set-Cookie']
 };
 app.use(cors(corsOptions));
 
-// Session configuration MEJORADA
+// Preflight requests
+app.options('*', cors(corsOptions));
+
+// Session configuration MEJORADA - FIX CRÍTICO
 app.use(session({
   secret: process.env.SESSION_SECRET || 'cse341-books-api-development-key',
   resave: false,
@@ -62,10 +82,11 @@ app.use(session({
     secure: isProduction,
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000,
-    sameSite: isProduction ? 'none' : 'lax', // CRÍTICO para OAuth en producción
+    sameSite: isProduction ? 'none' : 'lax', // ¡CRÍTICO para OAuth en producción!
     domain: isProduction ? '.onrender.com' : undefined
   },
-  proxy: isProduction
+  proxy: isProduction,
+  name: 'connect.sid' // Nombre explícito de la cookie
 }));
 
 console.log('✅ Configuración de sesión inicializada');
@@ -77,7 +98,7 @@ console.log('✅ Passport inicializado');
 
 const User = require('./models/user');
 
-// GitHub OAuth Strategy - CON MÁS LOGS
+// GitHub OAuth Strategy
 passport.use(new GitHubStrategy({
   clientID: process.env.GITHUB_CLIENT_ID,
   clientSecret: process.env.GITHUB_CLIENT_SECRET,
@@ -172,16 +193,40 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// Middleware para logs de cada request
+// Middleware para logs de cada request MEJORADO
 app.use((req, res, next) => {
   console.log(`\n=== 📨 REQUEST: ${req.method} ${req.url} ===`);
   console.log('   Time:', new Date().toISOString());
-  console.log('   Origin:', req.headers.origin);
+  console.log('   Origin:', req.headers.origin || 'No origin');
   console.log('   User-Agent:', req.headers['user-agent']?.substring(0, 50));
   console.log('   Session ID:', req.sessionID);
   console.log('   Authenticated:', req.isAuthenticated());
+  console.log('   Cookies:', req.headers.cookie ? 'Present' : 'Missing');
+  console.log('   User:', req.user ? req.user.username : 'No user');
   next();
 });
+
+// Middleware de autenticación mejorado
+const isAuthenticated = (req, res, next) => {
+  console.log('=== 🔍 VERIFICANDO AUTENTICACIÓN ===');
+  console.log('   Ruta:', req.path);
+  console.log('   Session ID:', req.sessionID);
+  console.log('   Autenticado:', req.isAuthenticated());
+  console.log('   Usuario:', req.user ? req.user.username : 'No autenticado');
+  console.log('   Cookies recibidas:', req.headers.cookie || 'No cookies');
+  
+  if (req.isAuthenticated()) {
+    console.log('✅ ACCESO PERMITIDO - Usuario autenticado');
+    return next();
+  }
+  
+  console.log('❌ ACCESO DENEGADO - Usuario no autenticado');
+  res.status(401).json({ 
+    message: 'Por favor inicia sesión para acceder a este recurso',
+    loginUrl: '/auth/github',
+    authenticated: false
+  });
+};
 
 // Manejo mejorado de favicon - ELIMINA ERRORES 404
 app.get('/favicon.ico', (req, res) => {
@@ -199,6 +244,8 @@ app.get('/', (req, res) => {
   console.log('🏠 Home page accessed');
   console.log('   Authenticated:', req.isAuthenticated());
   console.log('   User:', req.user ? req.user.username : 'No user');
+  console.log('   Session ID:', req.sessionID);
+  console.log('   Cookies:', req.headers.cookie ? 'Present' : 'Missing');
   
   if (req.isAuthenticated()) {
     res.json({
@@ -210,14 +257,16 @@ app.get('/', (req, res) => {
       },
       logoutUrl: '/logout',
       apiDocs: '/api-docs',
-      authenticated: true
+      authenticated: true,
+      sessionId: req.sessionID
     });
   } else {
     res.json({
       message: 'Welcome to Books & Authors API!',
       loginUrl: '/auth/github',
       apiDocs: '/api-docs',
-      authenticated: false
+      authenticated: false,
+      sessionId: req.sessionID
     });
   }
 });
@@ -226,6 +275,7 @@ app.get('/', (req, res) => {
 app.get('/login', (req, res) => {
   console.log('🔑 Login route - redirecting to GitHub OAuth');
   console.log('   Session ID:', req.sessionID);
+  console.log('   Cookies:', req.headers.cookie ? 'Present' : 'Missing');
   res.redirect('/auth/github');
 });
 
@@ -237,6 +287,7 @@ app.get('/auth/github',
     console.log('   Callback URL:', process.env.GITHUB_CALLBACK_URL || `${CURRENT_URL}/auth/github/callback`);
     console.log('   Session ID:', req.sessionID);
     console.log('   Headers origin:', req.headers.origin);
+    console.log('   Cookies:', req.headers.cookie ? 'Present' : 'Missing');
     next();
   },
   passport.authenticate('github', { scope: ['user:email'] })
@@ -249,6 +300,7 @@ app.get('/auth/github/callback',
     console.log('   Code received:', !!req.query.code);
     console.log('   Error:', req.query.error || 'None');
     console.log('   Session ID:', req.sessionID);
+    console.log('   Cookies:', req.headers.cookie ? 'Present' : 'Missing');
     
     if (req.query.error) {
       console.error('❌ GitHub returned error:', req.query.error);
@@ -266,10 +318,69 @@ app.get('/auth/github/callback',
     console.log('   User authenticated:', req.user.username);
     console.log('   User ID:', req.user._id);
     console.log('   Session ID:', req.sessionID);
+    console.log('   Setting session cookie...');
     console.log('   Redirecting to /api-docs');
-    res.redirect('/api-docs');
+    
+    // Asegurar que la cookie se establezca
+    req.session.save((err) => {
+      if (err) {
+        console.error('❌ Error saving session:', err);
+      }
+      res.redirect('/api-docs');
+    });
   }
 );
+
+app.get('/auth/logout', (req, res) => {
+  console.log('=== 🚪 SOLICITUD DE LOGOUT ===');
+  console.log('   Usuario antes de logout:', req.user ? req.user.username : 'No autenticado');
+  console.log('   Session ID:', req.sessionID);
+  console.log('   Cookies:', req.headers.cookie ? 'Present' : 'Missing');
+  
+  req.logout((err) => {
+    if (err) {
+      console.error('❌ Error en logout:', err);
+      return res.status(500).json({ message: 'Error al cerrar sesión' });
+    }
+    console.log('✅ Logout exitoso');
+    
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('❌ Session destruction error:', err);
+      } else {
+        console.log('✅ Session destroyed successfully');
+      }
+      res.redirect('/');
+    });
+  });
+});
+
+app.get('/auth/current', (req, res) => {
+  console.log('=== 👤 SOLICITUD DE USUARIO ACTUAL ===');
+  console.log('   Autenticado:', req.isAuthenticated());
+  console.log('   Usuario:', req.user ? req.user.username : 'No autenticado');
+  console.log('   Session ID:', req.sessionID);
+  console.log('   Cookies:', req.headers.cookie ? 'Present' : 'Missing');
+  
+  if (req.isAuthenticated()) {
+    res.json({
+      user: {
+        id: req.user._id,
+        username: req.user.username,
+        email: req.user.email,
+        displayName: req.user.displayName
+      },
+      authenticated: true,
+      sessionId: req.sessionID
+    });
+  } else {
+    res.status(401).json({ 
+      message: 'No autenticado',
+      authenticated: false,
+      sessionId: req.sessionID
+    });
+  }
+});
 
 // Ruta de diagnóstico MEJORADA
 app.get('/auth/debug', (req, res) => {
@@ -283,8 +394,9 @@ app.get('/auth/debug', (req, res) => {
   });
   console.log('   Headers:', {
     origin: req.headers.origin,
-    cookie: req.headers.cookie ? 'Present' : 'Missing'
+    cookie: req.headers.cookie || 'Missing'
   });
+  console.log('   All headers:', req.headers);
   
   res.json({
     authenticated: req.isAuthenticated(),
@@ -301,13 +413,18 @@ app.get('/auth/debug', (req, res) => {
     },
     headers: {
       origin: req.headers.origin,
-      cookiePresent: !!req.headers.cookie
+      cookie: req.headers.cookie || 'Missing',
+      allHeaders: req.headers
+    },
+    cookies: {
+      received: req.headers.cookie || 'No cookies received'
     }
   });
 });
 
 // Health check route
 app.get('/health', (req, res) => {
+  console.log('❤️  Health check - Session ID:', req.sessionID);
   res.json({
     status: 'OK',
     environment: isProduction ? 'production' : 'development',
@@ -315,6 +432,9 @@ app.get('/health', (req, res) => {
     session: {
       id: req.sessionID,
       authenticated: req.isAuthenticated()
+    },
+    cookies: {
+      received: !!req.headers.cookie
     }
   });
 });
@@ -323,7 +443,7 @@ app.get('/health', (req, res) => {
 const bookRoutes = require('./routes/books');
 const authorRoutes = require('./routes/authors');
 
-// Apply routes
+// Apply routes con autenticación
 app.use('/books', bookRoutes);
 app.use('/authors', authorRoutes);
 
@@ -354,6 +474,7 @@ app.listen(PORT, () => {
   console.log('   Health check:', `${CURRENT_URL}/health`);
   console.log('   Diagnóstico:', `${CURRENT_URL}/auth/debug`);
   console.log('   Login:', `${CURRENT_URL}/login`);
+  console.log('   IMPORTANTE: Cookie configurada con sameSite: none para producción');
   console.log('========================================\n');
 });
 

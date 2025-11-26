@@ -8,6 +8,7 @@ const GitHubStrategy = require('passport-github2').Strategy;
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerOptions = require('./swagger');
+const MongoStore = require('connect-mongo'); // ← NUEVO
 
 dotenv.config();
 
@@ -24,7 +25,7 @@ console.log('URL Actual:', CURRENT_URL);
 console.log('Es producción:', isProduction);
 console.log('====================================');
 
-// Trust proxy para Render - CRÍTICO
+// Trust proxy para Render
 if (isProduction) {
   app.set('trust proxy', 1);
   console.log('✅ Trust proxy habilitado para producción');
@@ -33,10 +34,9 @@ if (isProduction) {
 // Middleware
 app.use(express.json());
 
-// CORS configurado CORRECTAMENTE para Render
+// CORS configurado
 const corsOptions = {
   origin: function (origin, callback) {
-    // Permitir requests sin origin
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
@@ -60,21 +60,26 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-// Session configuration - VERSIÓN CORREGIDA (SIN DOMAIN)
+// Session configuration CON MONGOSTORE - SOLUCIÓN DEFINITIVA
 app.use(session({
   secret: process.env.SESSION_SECRET || 'cse341-books-api-development-key',
   resave: false,
   saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGODB_URI,
+    collectionName: 'sessions',
+    ttl: 24 * 60 * 60 // 24 horas
+  }),
   cookie: {
     secure: isProduction,
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000,
-    sameSite: isProduction ? 'none' : 'lax' // ¡SOLO ESTO!
+    sameSite: isProduction ? 'none' : 'lax'
   },
   proxy: isProduction
 }));
 
-console.log('✅ Configuración de sesión inicializada (sin domain)');
+console.log('✅ Configuración de sesión con MongoDB Store inicializada');
 
 // Passport configuration
 app.use(passport.initialize());
@@ -82,7 +87,7 @@ app.use(passport.session());
 
 const User = require('./models/user');
 
-// GitHub OAuth Strategy (mantener igual)
+// GitHub OAuth Strategy
 passport.use(new GitHubStrategy({
   clientID: process.env.GITHUB_CLIENT_ID,
   clientSecret: process.env.GITHUB_CLIENT_SECRET,
@@ -143,6 +148,7 @@ passport.serializeUser((user, done) => {
 
 passport.deserializeUser(async (id, done) => {
   try {
+    console.log('📂 Deserializando usuario ID:', id);
     const user = await User.findById(id);
     done(null, user);
   } catch (error) {
@@ -193,7 +199,7 @@ app.get('/login', (req, res) => {
   res.redirect('/auth/github');
 });
 
-// Auth routes - VERSIÓN MEJORADA
+// Auth routes
 app.get('/auth/github',
   passport.authenticate('github', { scope: ['user:email'] })
 );
@@ -205,11 +211,14 @@ app.get('/auth/github/callback',
   (req, res) => {
     console.log('=== ✅ LOGIN EXITOSO - Redirigiendo ===');
     console.log('   User:', req.user.username);
+    console.log('   Session ID:', req.sessionID);
     
-    // Forzar guardado de sesión antes de redirigir
+    // Forzar guardado de sesión
     req.session.save((err) => {
       if (err) {
         console.error('❌ Error guardando sesión:', err);
+      } else {
+        console.log('✅ Sesión guardada en MongoDB');
       }
       res.redirect('/api-docs');
     });
@@ -240,7 +249,8 @@ app.get('/auth/debug', (req, res) => {
     user: req.user,
     sessionId: req.sessionID,
     cookiesReceived: req.headers.cookie || 'None',
-    environment: isProduction ? 'production' : 'development'
+    environment: isProduction ? 'production' : 'development',
+    sessionStore: 'MongoDB' // Confirmar que estamos usando MongoDB
   });
 });
 
@@ -249,7 +259,8 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
     authenticated: req.isAuthenticated(),
-    sessionId: req.sessionID
+    sessionId: req.sessionID,
+    sessionStore: 'MongoDB'
   });
 });
 
@@ -263,17 +274,21 @@ app.use('/authors', authorRoutes);
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
-// MongoDB
+// MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('✅ MongoDB conectado'))
+  .then(() => {
+    console.log('✅ MongoDB conectado');
+    console.log('   Base de datos:', mongoose.connection.db?.databaseName);
+  })
   .catch(err => console.error('❌ Error MongoDB:', err));
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log('\n=== 🚀 SERVIDOR INICIADO ===');
+  console.log('\n=== 🚀 SERVIDOR INICIADO CON MONGODB STORE ===');
   console.log('   URL:', CURRENT_URL);
   console.log('   Login:', `${CURRENT_URL}/login`);
   console.log('   Diagnóstico:', `${CURRENT_URL}/auth/debug`);
+  console.log('   Session Store: MongoDB (Solución definitiva)');
   console.log('================================\n');
 });
 

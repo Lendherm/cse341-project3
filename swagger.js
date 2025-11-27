@@ -117,7 +117,7 @@ const swaggerOptions = {
             },
             publishedYear: {
               type: "integer",
-              example: 1938,
+              example: 1937,
               description: "Year the book was published"
             },
             pages: {

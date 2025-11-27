@@ -120,8 +120,15 @@ exports.getBookById = async (req, res) => {
 
 exports.createBook = async (req, res) => {
   try {
+    console.log('=== 📖 CREATE BOOK REQUEST ===');
+    console.log('Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('User:', req.user.username);
+    
     const validationErrors = validateBookData(req.body);
+    console.log('Validation Errors:', validationErrors);
+    
     if (validationErrors.length > 0) {
+      console.log('❌ Validation failed:', validationErrors);
       return res.status(400).json({ 
         message: 'Validation failed',
         errors: validationErrors
@@ -131,6 +138,7 @@ exports.createBook = async (req, res) => {
     // Check if author exists
     const author = await Author.findById(req.body.authorId);
     if (!author) {
+      console.log('❌ Author not found:', req.body.authorId);
       return res.status(400).json({ message: 'Author not found' });
     }
 
@@ -138,12 +146,14 @@ exports.createBook = async (req, res) => {
     const savedBook = await newBook.save();
     await savedBook.populate('authorId', 'name');
     
+    console.log('✅ Book created successfully:', savedBook._id);
     res.status(201).json(savedBook);
   } catch (error) {
-    console.error('Error creating book:', error);
+    console.error('❌ Error creating book:', error);
     
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
+      console.log('Mongoose Validation Errors:', errors);
       return res.status(400).json({ 
         message: 'Validation failed',
         errors: errors

@@ -8,7 +8,7 @@ const GitHubStrategy = require('passport-github2').Strategy;
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerOptions = require('./swagger');
-const MongoStore = require('connect-mongo'); // ← NUEVO
+const MongoStore = require('connect-mongo');
 
 dotenv.config();
 
